@@ -1,5 +1,5 @@
 import { db } from '../config/database';
-import { redis } from '../config/redis';
+import { cache } from '../config/cache';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
@@ -86,7 +86,7 @@ class VideoService {
       if (!video) throw new Error('Video not found');
 
       // Invalidate cache
-      await redis.del(`video:${videoId}`);
+      await cache.del(`video:${videoId}`);
 
       logger.info(`Video published: ${videoId}`);
       return video;
@@ -97,16 +97,16 @@ class VideoService {
   }
 
   async getVideoById(videoId: string): Promise<Video | null> {
-    const cached = await redis.get(`video:${videoId}`);
+    const cached = await cache.get(`video:${videoId}`);
     if (cached) {
-      return JSON.parse(cached);
+      return cached;
     }
 
     const query = `SELECT * FROM videos WHERE id = $1 AND video_status = $2`;
     const video = await db.queryOne<Video>(query, [videoId, 'PUBLISHED']);
 
     if (video) {
-      await redis.set(`video:${videoId}`, JSON.stringify(video), 300);
+      await cache.set(`video:${videoId}`, video, 300);
     }
 
     return video;
@@ -132,7 +132,7 @@ class VideoService {
 
     try {
       await db.query(query, [new Date(), videoId]);
-      await redis.del(`video:${videoId}`); // Invalidate cache
+      await cache.del(`video:${videoId}`); // Invalidate cache
     } catch (error) {
       logger.error('View count increment failed', error);
       throw error;

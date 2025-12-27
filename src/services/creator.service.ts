@@ -1,5 +1,5 @@
 import { db } from '../config/database';
-import { redis } from '../config/redis';
+import { cache } from '../config/cache';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
@@ -120,7 +120,7 @@ class CreatorService {
       if (!creator) throw new Error('Creator not found');
 
       // Invalidate cache
-      await redis.del(`creator:${userId}`);
+      await cache.del(`creator:${userId}`);
 
       logger.info(`Creator verification updated for user: ${userId}`);
       return creator;
@@ -132,16 +132,16 @@ class CreatorService {
 
   async getCreatorByUserId(userId: string): Promise<Creator | null> {
     // Try cache first
-    const cached = await redis.get(`creator:${userId}`);
+    const cached = await cache.get(`creator:${userId}`);
     if (cached) {
-      return JSON.parse(cached);
+      return cached;
     }
 
     const query = `SELECT * FROM creators WHERE user_id = $1`;
     const creator = await db.queryOne<Creator>(query, [userId]);
 
     if (creator) {
-      await redis.set(`creator:${userId}`, JSON.stringify(creator), 3600);
+      await cache.set(`creator:${userId}`, creator, 3600);
     }
 
     return creator;

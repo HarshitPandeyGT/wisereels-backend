@@ -1,0 +1,69 @@
+steps:
+  # Step 1: Build Docker image with caching
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/wisereels-backend:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/wisereels-backend:latest'
+      - '-f'
+      - 'Dockerfile'
+      - '.'
+    id: 'build-image'
+
+  # Step 2: Push image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/wisereels-backend:$SHORT_SHA'
+    id: 'push-image-short-sha'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/wisereels-backend:latest'
+    id: 'push-image-latest'
+    waitFor: ['push-image-short-sha']
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/cloud-builders/run'
+    args:
+      - 'deploy'
+      - 'wisereels-backend'
+      - '--image=gcr.io/$PROJECT_ID/wisereels-backend:$SHORT_SHA'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--allow-unauthenticated=false'
+      - '--memory=2Gi'
+      - '--cpu=2'
+      - '--timeout=3600'
+      - '--min-instances=1'
+      - '--max-instances=10'
+    env:
+      - 'CLOUDSDK_COMPUTE_REGION=us-central1'
+    id: 'deploy-cloud-run'
+    waitFor: ['push-image-latest']
+
+images:
+  - 'gcr.io/$PROJECT_ID/wisereels-backend:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/wisereels-backend:latest'
+
+# Set timeout for entire build (default is 10 minutes)
+timeout: '1800s'
+
+# Set substitution variables
+substitutions:
+  _REGION: 'us-central1'
+  _SERVICE_NAME: 'wisereels-backend'
+
+# Options for Cloud Build
+options:
+  machineType: 'N1_HIGHCPU_8'  # Faster builds
+  logging: CLOUD_LOGGING_ONLY
+  
+# Build will be triggered on:
+# - Push to main branch
+# - Pull requests
+# Configure trigger in GCP Console:
+# Cloud Build > Triggers > Create Trigger > Connect Repository

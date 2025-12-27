@@ -1,5 +1,5 @@
 import { db } from '../config/database';
-import { redis } from '../config/redis';
+import { cache } from '../config/cache';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
@@ -36,16 +36,16 @@ export interface LedgerTransaction {
 
 class WalletService {
   async getWallet(userId: string): Promise<Wallet | null> {
-    const cached = await redis.get(`wallet:${userId}`);
+    const cached = await cache.get(`wallet:${userId}`);
     if (cached) {
-      return JSON.parse(cached);
+      return cached;
     }
 
     const query = `SELECT * FROM wallet WHERE user_id = $1`;
     const wallet = await db.queryOne<Wallet>(query, [userId]);
 
     if (wallet) {
-      await redis.set(`wallet:${userId}`, JSON.stringify(wallet), 30);
+      await cache.set(`wallet:${userId}`, wallet, 30);
     }
 
     return wallet;
@@ -145,7 +145,7 @@ class WalletService {
     await db.query(query, [points, new Date(), userId]);
 
     // Invalidate cache
-    await redis.del(`wallet:${userId}`);
+    await cache.del(`wallet:${userId}`);
   }
 
   async processPendingToAvailable(): Promise<void> {
@@ -176,7 +176,7 @@ class WalletService {
         );
 
         // Invalidate cache
-        await redis.del(`wallet:${transaction.user_id}`);
+        await cache.del(`wallet:${transaction.user_id}`);
       }
 
       logger.info(`Processed ${transactions.length} transactions to available`);
@@ -184,6 +184,150 @@ class WalletService {
       logger.error('Pending to available processing failed', error);
       throw error;
     }
+  }
+
+  /**
+   * Wallet Heartbeat: Update watch progress every 30 seconds
+   * Applies tier-based multipliers (Gold: 5x, Silver: 3x, Bronze: 1x)
+   */
+  async recordWatchHeartbeat(
+    userId: string,
+    videoId: string,
+    creatorId: string,
+    watchDurationSeconds: number,
+    category: string
+  ): Promise<{
+    pendingPoints: number;
+    availablePoints: number;
+    pointsEarned: number;
+    multiplier: number;
+  }> {
+    try {
+      // Get user's expert status (determines multiplier)
+      const userQuery = `SELECT expert_status FROM users WHERE id = $1`;
+      const userResult = await db.queryOne<{ expert_status: string }>(userQuery, [userId]);
+
+      if (!userResult) {
+        throw new Error('User not found');
+      }
+
+      // Determine tier multiplier
+      const multiplierMap: { [key: string]: number } = {
+        verified: 5, // Gold tier for verified experts
+        pending: 3, // Silver tier for pending verification
+        none: 1, // Bronze tier for regular users
+      };
+
+      const tierMultiplier = multiplierMap[userResult.expert_status] || 1;
+
+      // Calculate points with tier multiplier
+      const ratePerTenMin = EARNING_RATES[category as keyof typeof EARNING_RATES] || 100;
+      const basePoints = Math.floor((watchDurationSeconds / 600) * ratePerTenMin);
+      const pointsWithMultiplier = Math.floor(basePoints * tierMultiplier);
+
+      if (pointsWithMultiplier > 0) {
+        // Record earning with multiplier info
+        const transactionId = uuidv4();
+        const now = new Date();
+        const availableAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+        const expiresAt = new Date(availableAt.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+        const insertQuery = `
+          INSERT INTO transactions (
+            id, user_id, type, amount, video_id, created_at, metadata
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `;
+
+        const metadata = {
+          base_points: basePoints,
+          multiplier: tierMultiplier,
+          tier: userResult.expert_status,
+          watch_duration_seconds: watchDurationSeconds,
+          category,
+          heartbeat: true,
+        };
+
+        await db.query(insertQuery, [
+          transactionId,
+          userId,
+          'earn',
+          pointsWithMultiplier,
+          videoId,
+          now,
+          JSON.stringify(metadata),
+        ]);
+
+        // Update wallet pending points
+        await db.query(
+          `UPDATE wallet 
+           SET pending_points = pending_points + $1, updated_at = $2
+           WHERE user_id = $3`,
+          [pointsWithMultiplier, now, userId]
+        );
+
+        // Invalidate cache
+        await cache.del(`wallet:${userId}`);
+
+        logger.info('Heartbeat recorded', {
+          userId,
+          videoId,
+          basePoints,
+          multiplier: tierMultiplier,
+          totalPoints: pointsWithMultiplier,
+          tier: userResult.expert_status,
+        });
+      }
+
+      // Return updated wallet balances
+      const wallet = await this.getWallet(userId);
+      if (!wallet) {
+        throw new Error('Failed to fetch updated wallet');
+      }
+
+      return {
+        pendingPoints: wallet.pending_points,
+        availablePoints: wallet.available_points,
+        pointsEarned: pointsWithMultiplier,
+        multiplier: tierMultiplier,
+      };
+    } catch (error) {
+      logger.error('Heartbeat recording failed', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get wallet options (payment methods and redemption options)
+   */
+  async getWalletOptions(): Promise<{
+    paymentMethods: Array<{ id: string; name: string; minAmount: number }>;
+    giftCards: Array<{ id: string; provider: string; denominations: number[] }>;
+  }> {
+    return {
+      paymentMethods: [
+        { id: 'upi', name: 'UPI (Google Pay, PhonePe, Paytm)', minAmount: 100 },
+        { id: 'recharge', name: 'Mobile Recharge', minAmount: 50 },
+        { id: 'bank_transfer', name: 'Bank Transfer', minAmount: 500 },
+      ],
+      giftCards: [
+        {
+          id: 'amazon',
+          provider: 'Amazon',
+          denominations: [100, 250, 500, 1000, 2000, 5000],
+        },
+        { id: 'flipkart', provider: 'Flipkart', denominations: [100, 250, 500, 1000, 2000] },
+        {
+          id: 'netflix',
+          provider: 'Netflix',
+          denominations: [149, 399, 649, 799],
+        },
+        {
+          id: 'spotify',
+          provider: 'Spotify',
+          denominations: [99, 249, 499, 999],
+        },
+      ],
+    };
   }
 
   async redeemPoints(userId: string, pointsToRedeem: number): Promise<string> {
@@ -237,7 +381,7 @@ class WalletService {
         ]
       );
 
-      await redis.del(`wallet:${userId}`);
+      await cache.del(`wallet:${userId}`);
 
       logger.info(`Redemption created: ${redemptionId}`);
       return result?.id || redemptionId;

@@ -1,0 +1,33 @@
+# Docker build configuration for Cloud Run deployment
+# Optimizes Docker build performance on Cloud Build
+
+# Exclude unnecessary files from Docker context
+.git
+.gitignore
+.env
+.env.example
+.DS_Store
+node_modules
+npm-debug.log
+dist
+build
+*.md
+.vscode
+.idea
+.pytest_cache
+__pycache__
+.mypy_cache
+.jest
+coverage
+.nyc_output
+*.log
+logs
+.github
+.gitlab-ci.yml
+Jenkinsfile
+.dockerignore
+Dockerfile.dev
+docker-compose*.yml
+.env.*.local
+.env.local
+.editorconfig

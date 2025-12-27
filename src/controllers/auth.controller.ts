@@ -165,3 +165,172 @@ export const sendOtp = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ success: false, error: (error as Error).message || 'Failed to send OTP' });
   }
 };
+/**
+ * Refresh access token
+ * POST /api/auth/refresh
+ */
+export const refreshToken = async (req: AuthRequest, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      throw new AppError(401, 'Authentication required');
+    }
+
+    if (!refreshToken) {
+      throw new AppError(400, 'Refresh token is required');
+    }
+
+    const newAccessToken = await authService.refreshAccessToken(refreshToken, userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Token refreshed successfully',
+      data: {
+        accessToken: newAccessToken,
+      },
+    });
+
+    logger.info('Token refreshed', { userId });
+  } catch (error) {
+    logger.error('Token refresh error', error);
+    res.status(401).json({
+      success: false,
+      error: (error as Error).message || 'Token refresh failed',
+    });
+  }
+};
+
+/**
+ * Logout user
+ * POST /api/auth/logout
+ */
+export const logout = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { refreshToken, allDevices } = req.body;
+
+    if (!userId) {
+      throw new AppError(401, 'Authentication required');
+    }
+
+    await authService.logout(userId, refreshToken, allDevices || false);
+
+    res.status(200).json({
+      success: true,
+      message: allDevices ? 'Logged out from all devices' : 'Logged out successfully',
+    });
+
+    logger.info('User logged out', { userId, allDevices });
+  } catch (error) {
+    logger.error('Logout error', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message || 'Logout failed',
+    });
+  }
+};
+
+/**
+ * Get active sessions
+ * GET /api/auth/sessions
+ */
+export const getActiveSessions = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      throw new AppError(401, 'Authentication required');
+    }
+
+    const sessions = await authService.getActiveSessions(userId);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        sessions,
+        count: sessions.length,
+      },
+    });
+
+    logger.info('Sessions fetched', { userId, count: sessions.length });
+  } catch (error) {
+    logger.error('Error fetching sessions', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message || 'Failed to fetch sessions',
+    });
+  }
+};
+
+/**
+ * Revoke specific session
+ * DELETE /api/auth/sessions/:sessionId
+ */
+export const revokeSession = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const sessionId = req.params.sessionId;
+
+    if (!userId) {
+      throw new AppError(401, 'Authentication required');
+    }
+
+    await authService.revokeSession(userId, sessionId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Session revoked successfully',
+    });
+
+    logger.info('Session revoked', { userId, sessionId });
+  } catch (error) {
+    logger.error('Error revoking session', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message || 'Failed to revoke session',
+    });
+  }
+};
+
+/**
+ * Delete user account
+ * DELETE /api/auth/account
+ */
+export const deleteAccount = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { password } = req.body;
+
+    if (!userId) {
+      throw new AppError(401, 'Authentication required');
+    }
+
+    if (!password) {
+      throw new AppError(400, 'Password is required to delete account');
+    }
+
+    // Optionally verify password before deletion (implement if needed)
+    // const user = await authService.getUserById(userId);
+    // const isPasswordValid = await bcrypt.compare(password, user.password);
+    // if (!isPasswordValid) {
+    //   throw new AppError(401, 'Invalid password');
+    // }
+
+    await authService.deleteAccount(userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Account deleted successfully. Your data will be permanently deleted within 30 days.',
+    });
+
+    logger.warn('User account deletion requested', { userId });
+  } catch (error) {
+    logger.error('Account deletion error', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message || 'Account deletion failed',
+    });
+  }
+};

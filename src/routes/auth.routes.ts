@@ -5,6 +5,11 @@ import {
   verifyToken,
   sendOtp,
   verifyOtpAndRegister,
+  refreshToken,
+  logout,
+  getActiveSessions,
+  revokeSession,
+  deleteAccount,
 } from '../controllers/auth.controller';
 import { authMiddleware } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
@@ -46,5 +51,40 @@ router.post('/send-otp', sendOtp);
  * @access Public
  */
 router.post('/verify-otp', verifyOtpAndRegister);
+
+/**
+ * @route POST /refresh
+ * @desc Refresh access token
+ * @access Authenticated users
+ */
+router.post('/refresh', authMiddleware, refreshToken);
+
+/**
+ * @route POST /logout
+ * @desc Logout user
+ * @access Authenticated users
+ */
+router.post('/logout', authMiddleware, logout);
+
+/**
+ * @route GET /sessions
+ * @desc Get active sessions
+ * @access Authenticated users
+ */
+router.get('/sessions', authMiddleware, getActiveSessions);
+
+/**
+ * @route DELETE /sessions/:sessionId
+ * @desc Revoke specific session
+ * @access Authenticated users
+ */
+router.delete('/sessions/:sessionId', authMiddleware, revokeSession);
+
+/**
+ * @route DELETE /account
+ * @desc Delete user account
+ * @access Authenticated users
+ */
+router.delete('/account', authMiddleware, deleteAccount);
 
 export default router;

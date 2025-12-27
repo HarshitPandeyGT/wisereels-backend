@@ -31,7 +31,7 @@ const steps = [
   {
     step: 4,
     title: 'Run Database Schema',
-    command: 'psql -U postgres -d wisereels -f database/schema.sql',
+    command: 'psql -U postgres -d wisereels -f database/database.sql',
     description: 'Create all tables and indexes'
   },
   {
@@ -107,7 +107,7 @@ console.log(`src/
 └── index.ts         (Server entry point)
 
 database/
-└── schema.sql       (PostgreSQL schema)
+└── database.sql     (PostgreSQL schema - CONSOLIDATED)
 
 docs/
 ├── API_DOCUMENTATION.md

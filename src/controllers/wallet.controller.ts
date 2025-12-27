@@ -149,3 +149,83 @@ export const processPendingPoints = async (req: AuthRequest, res: Response) => {
     }
   }
 };
+
+/**
+ * Wallet Heartbeat: 30-second watch progress update with tier multipliers
+ */
+export const walletHeartbeat = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      throw new AppError(401, 'Authentication required');
+    }
+
+    const { videoId, creatorId, watchDurationSeconds, category } = req.body;
+
+    if (!videoId || !creatorId || watchDurationSeconds === undefined || !category) {
+      throw new AppError(400, 'All heartbeat fields are required');
+    }
+
+    if (typeof watchDurationSeconds !== 'number' || watchDurationSeconds < 0) {
+      throw new AppError(400, 'Watch duration must be a positive number');
+    }
+
+    const result = await walletService.recordWatchHeartbeat(
+      req.user.userId,
+      videoId,
+      creatorId,
+      Math.floor(watchDurationSeconds),
+      category
+    );
+
+    res.json({
+      success: true,
+      message: 'Heartbeat recorded',
+      data: {
+        pointsEarned: result.pointsEarned,
+        multiplier: result.multiplier,
+        pendingPoints: result.pendingPoints,
+        availablePoints: result.availablePoints,
+      },
+    });
+
+    logger.info('Heartbeat processed', {
+      userId: req.user.userId,
+      videoId,
+      pointsEarned: result.pointsEarned,
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({
+        success: false,
+        error: error.message,
+      });
+    } else {
+      logger.error('Heartbeat error', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to process heartbeat',
+      });
+    }
+  }
+};
+
+/**
+ * Get wallet redemption options (payment methods and gift cards)
+ */
+export const getWalletOptions = async (req: AuthRequest, res: Response) => {
+  try {
+    const options = await walletService.getWalletOptions();
+
+    res.json({
+      success: true,
+      message: 'Wallet options retrieved',
+      data: options,
+    });
+  } catch (error) {
+    logger.error('Get wallet options error', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch wallet options',
+    });
+  }
+};
