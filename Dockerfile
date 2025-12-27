@@ -47,7 +47,7 @@ COPY --from=builder /app/dist ./dist
 COPY --chown=nodejs:nodejs database/ ./database/
 
 # Copy any other necessary files
-COPY --chown=nodejs:nodejs .env.example .
+COPY --chown=nodejs:nodejs .env.example .env.example
 
 # Switch to non-root user
 USER nodejs

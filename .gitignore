@@ -19,6 +19,7 @@ DEPLOYMENT_GUIDE.md
 .env.local
 .env.*.local
 .env.production.local
+!.env.example
 
 # ============================================================================
 # Compiled / Build Output
