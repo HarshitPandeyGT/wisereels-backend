@@ -29,8 +29,8 @@ export class OtpService {
     if (lastOtp && (Date.now() - new Date(lastOtp.created_at).getTime()) < OTP_RATE_LIMIT_SECONDS * 1000) {
       throw new Error('OTP recently sent. Please wait before requesting again.');
     }
-    // Generate OTP
-    const otp = this.generateOtp();
+    // Generate OTP - use hardcoded OTP in development if BYPASS_OTP is set
+    const otp = process.env.BYPASS_OTP === 'true' ? '123456' : this.generateOtp();
     const otpHash = this.hashOtp(otp);
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
     // Store OTP (plain and hashed)
@@ -38,9 +38,11 @@ export class OtpService {
       'INSERT INTO otps (phone_number, otp_code, otp_hash, expires_at, attempts, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
       [phoneNumber, otp, otpHash, expiresAt, 0, new Date()]
     );
-    // Send OTP
-    await this.smsProvider.sendOtp(phoneNumber, otp);
-    logger.info(`OTP sent to ${phoneNumber}`);
+    // Send OTP only if not bypassed
+    if (process.env.BYPASS_OTP !== 'true') {
+      await this.smsProvider.sendOtp(phoneNumber, otp);
+    }
+    logger.info(`OTP sent to ${phoneNumber}${process.env.BYPASS_OTP === 'true' ? ' (BYPASS MODE - Use 123456)' : ''}`);
   }
 
   async verifyOtp(phoneNumber: string, otp: string): Promise<boolean> {
